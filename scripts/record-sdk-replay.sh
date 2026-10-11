@@ -2,9 +2,21 @@
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
+IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:dev"
+NETWORK_MODE=host
+SDK_PROFILE=release
+cli_init "bash scripts/record-sdk-replay.sh WHEEL OUTPUT [options] [record options]"
+cli_option --image IMAGE 'Runtime and wheel-verification image'
+cli_option --network-mode NETWORK_MODE 'host (default) or bridge'
+cli_option --package-root PKG 'Package root (normally inferred)'
+cli_option --sdk-profile SDK_PROFILE 'release (default) or local-v1.0.8 (read-only tests only)'
+CLI_PASSTHROUGH=1
+cli_parse "$@"
+set -- "${CLI_ARGS[@]}"
+cli_network "$NETWORK_MODE"
 WHEEL="${1:-}"
 OUTPUT="${2:-}"
-IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:dev}"
 [[ $# -ge 2 ]] && shift 2 || true
 
 [[ -n "$WHEEL" && -f "$WHEEL" && -n "$OUTPUT" ]] || {
@@ -16,7 +28,7 @@ IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:dev}"
   exit 1
 }
 
-bash "$PKG/scripts/verify-sdk-wheel.sh" "$WHEEL"
+bash "$PKG/scripts/verify-sdk-wheel.sh" "$WHEEL" --image "$IMAGE" --package-root "$PKG" --sdk-profile "$SDK_PROFILE"
 
 wheel_name="$(basename "$WHEEL")"
 output_dir="$(realpath "$(dirname "$OUTPUT")")"
@@ -39,7 +51,7 @@ for ((index = 0; index < ${#record_args[@]}; index++)); do
 done
 
 docker_network_args=()
-case "${BPX_DOCKER_NETWORK_MODE:-host}" in
+case "$NETWORK_MODE" in
   host)
     docker_network_args=(--network host)
     ;;
@@ -50,7 +62,7 @@ case "${BPX_DOCKER_NETWORK_MODE:-host}" in
     )
     ;;
   *)
-    echo "BPX_DOCKER_NETWORK_MODE must be host or bridge" >&2
+    echo "--network-mode must be host or bridge" >&2
     exit 2
     ;;
 esac
@@ -64,7 +76,7 @@ docker run --rm \
   -v "$output_dir:/capture" \
   --entrypoint /bin/bash \
   "$IMAGE" \
-  -lc 'python3 -m pip install --no-index --no-deps "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && cd /pkg && exec python3 -m bpx_quadruped.recording "/capture/$1" "${@:2}"' \
+  -lc 'python3 -m pip install --no-index --no-deps --force-reinstall "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && cd /pkg && exec python3 -m bpx_quadruped.recording "/capture/$1" "${@:2}"' \
   record "$output_name" "$@"
 
 PYTHONPATH="$PKG${PYTHONPATH:+:$PYTHONPATH}" \

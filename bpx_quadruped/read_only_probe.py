@@ -15,7 +15,7 @@ import signal
 import sys
 import threading
 import time
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 
 STATE_FIELDS = (
@@ -103,10 +103,15 @@ def validate_args(args: argparse.Namespace) -> None:
             raise ValueError("{} must be finite and > 0".format(name.replace("_", "-")))
 
 
+def print_event(event: Dict[str, Any]) -> None:
+    print(json.dumps(event, sort_keys=True), flush=True)
+
+
 def run(
     args: argparse.Namespace,
     *,
     stop_event: Optional[threading.Event] = None,
+    emit: Callable[[Dict[str, Any]], None] = print_event,
 ) -> int:
     validate_args(args)
     import bpx_sdk
@@ -120,25 +125,20 @@ def run(
     robot_state.setTcpLocalPort(args.tcp_local_port)
     robot_state.setRobotStateUploadRate(args.state_rate_hz)
 
-    print(
-        json.dumps(
-            {
-                "event": "probe_start",
-                "sdk_version": getattr(bpx_sdk, "__version__", "unknown"),
-                "robot_ip": args.robot_ip,
-                "robot_state_port": args.robot_state_port,
-                "state_rate_hz": args.state_rate_hz,
-            },
-            sort_keys=True,
-        ),
-        flush=True,
+    emit(
+        {
+            "event": "probe_start",
+            "sdk_version": getattr(bpx_sdk, "__version__", "unknown"),
+            "robot_ip": args.robot_ip,
+            "robot_state_port": args.robot_state_port,
+            "state_rate_hz": args.state_rate_hz,
+        }
     )
 
     connect_started = time.monotonic()
-    if not robot_state.connect():
-        raise RuntimeError("RequestRobotState.connect() returned false")
-
     try:
+        if not robot_state.connect():
+            raise RuntimeError("RequestRobotState.connect() returned false")
         connect_deadline = connect_started + args.connect_timeout_s
         while not stop_event.is_set():
             connected = robot_state.isConnected()
@@ -159,25 +159,21 @@ def run(
 
         get_robot_version = getattr(robot_state, "getRobotVersion", None)
         robot_version = get_robot_version() if get_robot_version is not None else None
-        print(
-            json.dumps(
-                {
-                    "event": "probe_ready",
-                    "first_odometry_latency_s": time.monotonic() - connect_started,
-                    "robot_version": _json_safe(robot_version),
-                },
-                sort_keys=True,
-            ),
-            flush=True,
+        emit(
+            {
+                "event": "probe_ready",
+                "first_odometry_latency_s": time.monotonic() - connect_started,
+                "robot_version": _json_safe(robot_version),
+            }
         )
 
         end_at = time.monotonic() + args.duration_s
         while not stop_event.is_set() and time.monotonic() < end_at:
-            print(json.dumps(collect_sample(robot_state), sort_keys=True), flush=True)
+            emit(collect_sample(robot_state))
             stop_event.wait(args.sample_period_s)
     finally:
         robot_state.disconnect()
-        print(json.dumps({"event": "probe_stop"}, sort_keys=True), flush=True)
+        emit({"event": "probe_stop"})
     return 0
 
 

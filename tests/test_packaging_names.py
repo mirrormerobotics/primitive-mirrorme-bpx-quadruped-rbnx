@@ -156,7 +156,7 @@ class PackagingNamesTest(unittest.TestCase):
         self.assertIn("sha256sum", start_script)
         self.assertIn(":/vendor-sdk/$wheel_name:ro", start_script)
         self.assertIn('BPX_SDK_WHEEL="/vendor-sdk/$wheel_name"', start_script)
-        self.assertIn('python3 -m pip install --no-index --no-deps "$BPX_SDK_WHEEL"', entrypoint)
+        self.assertIn('python3 -m pip install --no-index --no-deps --force-reinstall "$BPX_SDK_WHEEL"', entrypoint)
 
     def test_sdk_runtime_has_explicit_docker_desktop_udp_mode(self) -> None:
         start_script = (PACKAGE_ROOT / "scripts/start.sh").read_text(encoding="utf-8")
@@ -167,7 +167,7 @@ class PackagingNamesTest(unittest.TestCase):
             encoding="utf-8"
         )
         for script in (start_script, probe_script, record_script):
-            self.assertIn("BPX_DOCKER_NETWORK_MODE", script)
+            self.assertIn("--network-mode", script)
             self.assertIn("--publish", script)
         self.assertIn("BPX_DOCKER_STATE_UDP_PORT", start_script)
         self.assertIn("BPX_DOCKER_HOST_ADDRESS", start_script)
@@ -226,7 +226,9 @@ class PackagingNamesTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertTrue(os.access(PACKAGE_ROOT / "scripts/start-sdk-read-only.sh", os.X_OK))
-        self.assertIn('[[ -n "${BPX_SDK_WHEEL:-}" ]]', wrapper)
+        self.assertIn('start.sh" "$@"', wrapper)
+        self.assertIn('--sdk-wheel is required for the SDK backend',
+                      (PACKAGE_ROOT / "scripts/start.sh").read_text())
         self.assertIn("export BPX_REQUIRED_BACKEND=sdk", wrapper)
 
         start_script = (PACKAGE_ROOT / "scripts/start.sh").read_text(encoding="utf-8")
@@ -240,7 +242,8 @@ class PackagingNamesTest(unittest.TestCase):
         self.assertIn("RosBackend.get().shutdown()", provider)
 
         stop_script = (PACKAGE_ROOT / "scripts/stop.sh").read_text(encoding="utf-8")
-        self.assertIn('BPX_RBNX_STOP_TIMEOUT_S:-30', stop_script)
+        self.assertIn('STOP_TIMEOUT_S=30', stop_script)
+        self.assertIn('--stop-timeout-s', stop_script)
 
     def test_replay_manifest_is_read_only_and_forces_replay_backend(self) -> None:
         manifest = (PACKAGE_ROOT / "package_manifest.state-replay.yaml").read_text(

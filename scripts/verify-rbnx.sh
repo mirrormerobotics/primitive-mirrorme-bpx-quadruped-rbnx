@@ -2,13 +2,33 @@
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ROBONIX_SOURCE="${1:-${ROBONIX_SOURCE_PATH:-}}"
-EXPECTED_COMMIT="${RBNX_EXPECTED_COMMIT:-f6cacfc4b402eb57c75b553d375c6cfaba11dce7}"
-IMAGE="${BPX_RBNX_TOOL_IMAGE:-mirrorme-bpx-rbnx-codegen:dev}"
-CACHE="${BPX_RBNX_TOOL_CACHE:-$PKG/.artifacts/rbnx-tool}"
-TARGET_CACHE="${BPX_RBNX_TARGET_CACHE:-$CACHE/target}"
-CARGO_CACHE="${BPX_RBNX_CARGO_CACHE:-$CACHE/cargo}"
-CONFIG_CACHE="${BPX_RBNX_CONFIG_CACHE:-$CACHE/config}"
+ROBONIX_SOURCE=""
+EXPECTED_COMMIT="f6cacfc4b402eb57c75b553d375c6cfaba11dce7"
+IMAGE="mirrorme-bpx-rbnx-codegen:dev"
+CACHE=""
+TARGET_CACHE=""
+CARGO_CACHE=""
+CONFIG_CACHE=""
+source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
+cli_init 'bash scripts/verify-rbnx.sh [SOURCE] [options]'
+cli_option --package-root PKG 'Package root'
+cli_option --robonix-source ROBONIX_SOURCE 'Fixed Robonix checkout'
+cli_option --expected-commit EXPECTED_COMMIT 'Expected full Robonix commit'
+cli_option --tool-image IMAGE 'Robonix tool image'
+cli_option --tool-cache CACHE 'Cache base directory'
+cli_option --target-cache TARGET_CACHE 'Rust target cache'
+cli_option --cargo-cache CARGO_CACHE 'Cargo cache'
+cli_option --config-cache CONFIG_CACHE 'Robonix config cache'
+cli_parse "$@"
+((${#CLI_ARGS[@]} <= 1)) || cli_die 'at most one source path is allowed'
+if ((${#CLI_ARGS[@]})); then
+  [[ -z "$ROBONIX_SOURCE" ]] || cli_die 'source specified twice'
+  ROBONIX_SOURCE="${CLI_ARGS[0]}"
+fi
+CACHE="${CACHE:-$PKG/.artifacts/rbnx-tool}"
+TARGET_CACHE="${TARGET_CACHE:-$CACHE/target}"
+CARGO_CACHE="${CARGO_CACHE:-$CACHE/cargo}"
+CONFIG_CACHE="${CONFIG_CACHE:-$CACHE/config}"
 
 [[ -n "$ROBONIX_SOURCE" && -d "$ROBONIX_SOURCE/.git" ]] || {
   echo "usage: $0 /path/to/fixed/robonix/source" >&2
@@ -38,6 +58,9 @@ if printf '%s\n' "$submodule_status" | rg -q '^[-+U]'; then
 fi
 
 mkdir -p "$TARGET_CACHE" "$CARGO_CACHE" "$CONFIG_CACHE"
+TARGET_CACHE="$(realpath "$TARGET_CACHE")"
+CARGO_CACHE="$(realpath "$CARGO_CACHE")"
+CONFIG_CACHE="$(realpath "$CONFIG_CACHE")"
 
 docker build --network host \
   -t "$IMAGE" \

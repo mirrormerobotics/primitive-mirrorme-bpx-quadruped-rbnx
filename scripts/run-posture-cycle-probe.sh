@@ -2,9 +2,20 @@
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
+IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:dev"
+NETWORK_MODE=host
+CONTAINER="bpx_motion_level_posture_probe"
+cli_init "bash scripts/run-posture-cycle-probe.sh WHEEL --robot-ip IP --confirm-physical-motion [options] [probe options]"
+cli_option --image IMAGE 'Runtime and wheel-verification image'
+cli_option --network-mode NETWORK_MODE 'host (default) or bridge'
+cli_option --package-root PKG 'Package root (normally inferred)'
+cli_option --container-name CONTAINER 'Hardware probe container name'
+CLI_PASSTHROUGH=1
+cli_parse "$@"
+set -- "${CLI_ARGS[@]}"
+cli_network "$NETWORK_MODE"
 WHEEL="${1:-}"
-IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:dev}"
-CONTAINER="${BPX_POSTURE_PROBE_CONTAINER:-bpx_motion_level_posture_probe}"
 LABEL_KEY="ai.robonix.hardware-test"
 LABEL_VALUE="mirrorme-bpx-posture-cycle"
 shift || true
@@ -59,11 +70,11 @@ done
   exit 2
 }
 
-bash "$PKG/scripts/verify-sdk-wheel.sh" "$WHEEL" --posture
+bash "$PKG/scripts/verify-sdk-wheel.sh" "$WHEEL" --image "$IMAGE" --package-root "$PKG" --posture
 
 wheel_name="$(basename "$WHEEL")"
 docker_network_args=()
-case "${BPX_DOCKER_NETWORK_MODE:-host}" in
+case "$NETWORK_MODE" in
   host)
     docker_network_args=(--network host)
     ;;
@@ -74,7 +85,7 @@ case "${BPX_DOCKER_NETWORK_MODE:-host}" in
     )
     ;;
   *)
-    echo "BPX_DOCKER_NETWORK_MODE must be host or bridge" >&2
+    echo "--network-mode must be host or bridge" >&2
     exit 2
     ;;
 esac
@@ -113,5 +124,5 @@ docker run --rm --init \
   -v "$PKG:/pkg:ro" \
   --entrypoint /bin/bash \
   "$IMAGE" \
-  -lc 'python3 -m pip install --no-index --no-deps "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && cd /pkg && exec python3 -m bpx_quadruped.posture_cycle_probe "$@"' \
+  -lc 'python3 -m pip install --no-index --no-deps --force-reinstall "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && cd /pkg && exec python3 -m bpx_quadruped.posture_cycle_probe "$@"' \
   probe "$@"

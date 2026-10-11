@@ -10,7 +10,7 @@ The SDK baseline is v1.0.8, pinned to public repository commit
 `cab478a5fd3dfce087e0774534bb87b51a3d69e1`. Download the CPython 3.10 Linux
 x86_64 wheel from the fixed
 [`v1.0.8` release](https://github.com/mirrormerobotics/bpx_sdk_open/releases/tag/v1.0.8),
-then pass its local path through `BPX_SDK_WHEEL`. The adapter does not follow
+then pass its local path using `--sdk-wheel` to the launcher. The adapter does not follow
 the moving `master` HEAD implicitly.
 
 ## Current capability surface
@@ -122,14 +122,13 @@ same way; use an explicit bridge-mode UDP mapping for the bounded probe and
 recorder:
 
 ```bash
-BPX_DOCKER_NETWORK_MODE=bridge \
-  bash scripts/run-read-only-probe.sh /path/to/the-wheel \
+bash scripts/run-read-only-probe.sh /path/to/the-wheel --network-mode bridge \
   --robot-ip 192.168.1.237 --robot-state-port 9873 --duration-s 10
 ```
 
 The selected UDP port must be free on the Docker host. The integrated runtime
 also accepts bridge mode. In that topology Atlas must listen on an address
-reachable from the Docker bridge, and `BPX_DOCKER_HOST_ADDRESS` must identify
+reachable from the Docker bridge, and `--docker-host-address` must identify
 the address the Primitive container uses for Atlas (for the tested nested
 Docker Desktop topology, the local Docker bridge gateway). The container
 automatically advertises its own bridge IPv4 lifecycle endpoint. Native Linux
@@ -147,8 +146,7 @@ and control-source arbitration have been checked, one stand/hold/sit cycle can
 be run with the narrow MotionLevelControl probe:
 
 ```bash
-BPX_DOCKER_NETWORK_MODE=bridge \
-  bash scripts/run-posture-cycle-probe.sh /path/to/the-wheel \
+bash scripts/run-posture-cycle-probe.sh /path/to/the-wheel --network-mode bridge \
     --robot-ip 192.168.1.237 \
     --robot-state-port 9873 \
     --hold-duration-s 3 \
@@ -175,7 +173,7 @@ acknowledgement. The diagnostic profile requires all of the following:
 
 - the pinned external SDK wheel;
 - `backend=sdk`, `allow_motion=true`, and `enable_posture_service=true`;
-- `BPX_CONFIRM_PHYSICAL_POSTURE_SERVICE=I_UNDERSTAND_POSTURE_RPC_CAN_MOVE_BPX`;
+- `--confirm-physical-posture-service` when using the operator launcher;
 - a local operator with the physical E-stop and a clear test area.
 
 The RPC accepts only exact lowercase `stand` and `sit`. Calls are serialized,
@@ -252,9 +250,10 @@ posture wrapper. It verifies the recorded SHA-256, mounts that one file
 read-only, and installs it without contacting a package index:
 
 ```bash
-export BPX_SDK_WHEEL=/absolute/path/to/bpx_sdk_open-1.0.8-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
-rbnx start -p . --set backend=sdk --set allow_motion=true \
-  --set enable_posture_service=true
+bash ../robot-mirrorme-bpx/scripts/start-sdk-read-only-docker.sh \
+  --sdk-wheel /absolute/path/to/bpx_sdk_open-1.0.8-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl \
+  --robot-ip 192.168.1.237 --release-posture \
+  --confirm-physical-posture-service
 ```
 
 For normal deployment, use the Robot package's
@@ -269,10 +268,10 @@ Once `rbnx` is installed and configured against a fixed Robonix source tree:
 ```bash
 rbnx validate .
 rbnx build -p .
-export BPX_SDK_WHEEL=/absolute/path/to/the-pinned-wheel
-rbnx start -p . --config ./local-config.yaml \
-  --set backend=sdk --set allow_motion=true \
-  --set enable_posture_service=true
+bash ../robot-mirrorme-bpx/scripts/start-sdk-read-only-docker.sh \
+  --sdk-wheel /absolute/path/to/the-pinned-wheel \
+  --robot-ip 192.168.1.237 --release-posture \
+  --confirm-physical-posture-service
 ```
 
 For a fake, motion-disabled development smoke test without hardware, explicitly
@@ -298,7 +297,7 @@ commits, builds `rbnx` in a pinned Rust image, and uses the `grpcio-tools`
 versions from that Robonix lockfile. All tool caches stay under `.artifacts/`.
 
 The start wrapper bind-mounts the package and `robonix-api` into the container.
-When `BPX_SDK_WHEEL` is set, it additionally verifies the pinned artifact and
+When `--sdk-wheel` is supplied (internally `BPX_SDK_WHEEL`), it additionally verifies the pinned artifact and
 bind-mounts only that wheel under `/vendor-sdk` with `:ro`. The artifact remains
 outside the repository and runtime image so the release can preserve its own
 Apache-2.0 LICENSE, NOTICE, third-party notices, checksum, and SBOM boundary.
@@ -322,3 +321,9 @@ robot until the controlled-motion milestone and hardware checklist are complete.
 This Primitive is licensed under the Apache License 2.0. See [LICENSE](LICENSE)
 and [NOTICE](NOTICE). The separately distributed BPX SDK is also Apache-2.0,
 but retains its own LICENSE, NOTICE, third-party notices, and release metadata.
+
+## Operator command-line options
+
+Operator scripts accept command-line options.
+See [SCRIPT_CLI.md](SCRIPT_CLI.md) for image, network, container, cache and SDK
+options. `bash scripts/<name>.sh --help` is side-effect free.

@@ -30,7 +30,7 @@ if [[ -n "${BPX_SDK_WHEEL:-}" ]]; then
     echo "mounted BPX_SDK_WHEEL is missing: $BPX_SDK_WHEEL" >&2
     exit 1
   }
-  python3 -m pip install --no-index --no-deps "$BPX_SDK_WHEEL"
+  python3 -m pip install --no-index --no-deps --force-reinstall "$BPX_SDK_WHEEL"
   python3 -c 'import bpx_sdk; assert bpx_sdk.__version__ == "1.0.8"'
 fi
 
