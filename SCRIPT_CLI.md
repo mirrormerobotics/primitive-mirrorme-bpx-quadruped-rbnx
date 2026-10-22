@@ -1,5 +1,10 @@
 # 用户脚本命令行参数
 
+新机器无真机开发见同级 Robot 仓库的 `OFFLINE_DEVELOPMENT.md`。
+其 `scripts/verify_offline.py` 统一执行两仓库测试与 Docker fake/replay 验收。
+`odom_acceptance compare` 在缺少 SDK 或机器人版本记录时保留观测值，但将报告标为
+`insufficient_evidence`，不会把双方都缺失版本误判为相同基线。
+
 所有 `scripts/*.sh` 通过命令行参数配置，并支持 `--help`，
 查看帮助不调用 Docker、不连接真机。Shell 包装层选项支持 `--name value` 和
 `--name=value`；路径含空格时必须加引号。wheel／输出路径使用位置参数。

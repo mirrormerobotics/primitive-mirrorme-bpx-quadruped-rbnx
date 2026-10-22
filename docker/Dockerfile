@@ -52,6 +52,7 @@ RUN python3 -m pip install --no-cache-dir --no-deps --no-build-isolation . \
 
 FROM base AS test
 COPY package_manifest.yaml package_manifest.x86-docker.yaml package_manifest.sdk-read-only.yaml package_manifest.state-replay.yaml package_manifest.motion-dev.yaml package_manifest.posture-test.yaml ./
+COPY package_manifest.motion-test.yaml package_manifest.motion-test-fake.yaml ./
 COPY docker/Dockerfile ./docker/Dockerfile
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 RUN chmod 0755 ./docker/entrypoint.sh \

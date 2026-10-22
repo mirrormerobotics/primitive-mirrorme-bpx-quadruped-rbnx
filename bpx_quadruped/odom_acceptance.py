@@ -197,6 +197,11 @@ def summarize(path: str, edge: str, args: argparse.Namespace) -> Dict[str, Any]:
               "samples": len(samples), "fresh_samples": len(valid),
               "invalid_samples": invalid, "duplicate_timestamps": duplicates,
               "disconnected_samples": disconnected, "timestamp_regressions": regressions}
+    # Matching absent values cannot establish a common SDK/firmware baseline.
+    # Preserve readable observations, but never classify incomplete provenance.
+    for key in ("robot_version", "sdk_version"):
+        if not result[key]:
+            warnings.append("missing_" + key)
     if invalid or disconnected or regressions:
         warnings.append("invalid_disconnected_or_timestamp_regression")
     if not valid:

@@ -27,10 +27,20 @@ manually confirmed probe uses `setVelocity(0, 0, yaw)` only for one bounded,
 LegOdom-closed-loop yaw circle between stand and sit. Only feedback in the
 commanded direction counts toward completion; bounded opposite-direction,
 translation, timeout, and interruption failures zero yaw and attempt to sit.
-It is likewise absent from every manifest. A general `setVelocity(x, y, yaw)`
-adapter is the intended implementation behind `twist_in`, but that Robonix
-path is deferred.
+It is likewise absent from every release manifest. The non-release
+`motion_test` and `motion_test_fake` identities now implement general
+`twist_in` and standard bounded `move`, with local-only arm leases, feedback
+guards, cancellation, deadlines and zero cleanup. Their hardware acceptance
+is pending; see the Robot repository's `MOTION_TEST_GUIDE.md`.
 `JointLevelControl` will not be integrated.
+
+Bounded `motion_test` distance/angle moves use configurable minimum targets
+of 0.25 m/s and 0.25 rad/s by default to avoid the documented Walk deadzone.
+They stop on tolerance or fail on overshoot without automatic reversal.
+This does not boost continuous Twist or timed velocity requests. Acceleration,
+velocity limits, cancellation and local leases still apply; physical stopping
+error and hardware response require acceptance. See `M5_VALIDATION_2026-10-14.md`
+in the Robot repository before testing the changed bounded-move behavior.
 
 All runtimes publish the internal ROS 2 `/joint_states` topic with the 12 names
 defined by the pinned BPX SDK and official URDF. This topic is not advertised

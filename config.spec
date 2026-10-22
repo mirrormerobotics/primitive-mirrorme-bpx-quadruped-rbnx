@@ -4,6 +4,16 @@
 # Runtime validation is implemented by bpx_quadruped.config.
 
 config:
+  # UNRELEASED motion-test manifests only. SDK/fake, allow_motion=true;
+  # incompatible with enable_posture_service and auto_arm_fake. Activation is
+  # disarmed; only a container-local Unix socket command grants a lease.
+  enable_motion_service: false
+  # Local operator lease duration, 1..120 seconds. No remote renewal.
+  motion_lease_s: 30.0
+  # Bounded move only: Walk ignores small setpoints. SI units, default 0.25.
+  # Does NOT amplify incoming Twist or timed-velocity requests.
+  move_min_linear_mps: 0.25
+  move_min_angular_rps: 0.25
   # enum string: fake, sdk, or replay; default: fake.
   # sdk requires a verified, externally mounted BPX_SDK_WHEEL. The production
   # manifest enables only the guarded stand/sit posture service; the explicit
@@ -70,9 +80,18 @@ config:
   # Internal ROS 2 data-plane topic. Robonix has no quadruped JointState
   # contract in the fixed baseline, so this is not declared to Atlas.
   joint_states_topic: /joint_states
+  # Optional raw IMU; explicitly supply a verified sensor frame to enable.
+  # No static TF/extrinsic is assumed. Zero covariance means unknown per Imu.
+  publish_imu: false
+  imu_topic: /imu/data
+  imu_frame: ""
   odom_frame: odom
   base_frame: base_link
   odom_rate_hz: 50.0
+  # Diagonal order x,y,z,roll,pitch,yaw. Units are squared SI units.
+  # Nonzero placeholders, NOT measured noise estimates. Calibrate before fusion.
+  odom_pose_variance: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  odom_twist_variance: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
   # Publish odom -> base_link from the exact Odometry sample/stamp. Default
   # false; enabled only in checked-in fake/replay profiles until hardware axes

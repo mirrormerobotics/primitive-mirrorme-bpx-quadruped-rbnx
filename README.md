@@ -327,3 +327,10 @@ but retains its own LICENSE, NOTICE, third-party notices, and release metadata.
 Operator scripts accept command-line options.
 See [SCRIPT_CLI.md](SCRIPT_CLI.md) for image, network, container, cache and SDK
 options. `bash scripts/<name>.sh --help` is side-effect free.
+## Unreleased motion development
+
+`package_manifest.motion-test-fake.yaml` and `package_manifest.motion-test.yaml`
+provide supervised `twist_in` and standard bounded `move` with a local arm lease,
+feedback guards, cancellation and stop cleanup. Neither is a release manifest.
+See the sibling Robot repository's `MOTION_TEST_GUIDE.md` for operator commands
+and pending physical acceptance. Hardware behavior has not been verified.

@@ -82,6 +82,11 @@ docker run --rm --network host "${COMMON_MOUNTS[@]}" -w /src "$IMAGE" \
 docker run --rm --network host "${COMMON_MOUNTS[@]}" -w /src "$IMAGE" \
   cargo build --locked --release -p robonix-codegen --bin robonix-codegen
 
+# A fresh cache has no system binaries. Both BPX deployment profiles need
+# Atlas, and the body-description profiles additionally start Soma.
+docker run --rm --network host "${COMMON_MOUNTS[@]}" -w /src "$IMAGE" \
+  cargo build --locked --release -p robonix-atlas -p robonix-soma --bins
+
 docker run --rm --network host "${COMMON_MOUNTS[@]}" "$IMAGE" \
   /target/release/rbnx setup /src
 

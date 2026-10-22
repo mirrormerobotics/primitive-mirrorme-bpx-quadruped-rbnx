@@ -89,23 +89,32 @@ class QuadrupedController:
         with self._lock:
             if self._lifecycle in {LifecycleState.INACTIVE, LifecycleState.SHUTDOWN}:
                 return
-            self._emit_stop("deactivate")
-            self._backend.stop()
-            self._lifecycle = LifecycleState.INACTIVE
-            self._safety = SafetyState.DISARMED
-            self._target = None
-            self._target_at_s = None
+            try:
+                self._emit_stop("deactivate")
+            finally:
+                try:
+                    self._backend.stop()
+                finally:
+                    self._lifecycle = LifecycleState.INACTIVE
+                    self._safety = SafetyState.DISARMED
+                    self._target = None
+                    self._target_at_s = None
 
     def shutdown(self) -> None:
         with self._lock:
             if self._lifecycle is LifecycleState.SHUTDOWN:
                 return
-            self._emit_stop("shutdown")
-            self._backend.stop()
-            self._lifecycle = LifecycleState.SHUTDOWN
-            self._safety = SafetyState.DISARMED
-            self._target = None
-            self._target_at_s = None
+            try:
+                if self._lifecycle is LifecycleState.ACTIVE:
+                    self._emit_stop("shutdown")
+            finally:
+                try:
+                    self._backend.stop()
+                finally:
+                    self._lifecycle = LifecycleState.SHUTDOWN
+                    self._safety = SafetyState.DISARMED
+                    self._target = None
+                    self._target_at_s = None
 
     def arm(self) -> CommandDecision:
         with self._lock:
@@ -115,8 +124,8 @@ class QuadrupedController:
                 return CommandDecision(False, "controller is not active")
             if self._safety is SafetyState.FAULT:
                 return CommandDecision(False, "fault must be cleared before arm")
-            now = self._clock()
             state = self._backend.read_state()
+            now = self._clock()
             if not state.connected:
                 return CommandDecision(False, "backend is disconnected")
             if not self._state_is_fresh(state, now):
@@ -127,11 +136,11 @@ class QuadrupedController:
 
     def disarm(self, reason: str = "operator disarm") -> None:
         with self._lock:
-            self._emit_stop(reason)
             if self._safety is not SafetyState.FAULT:
                 self._safety = SafetyState.DISARMED
             self._target = None
             self._target_at_s = None
+            self._emit_stop(reason)
 
     def clear_fault(self) -> CommandDecision:
         with self._lock:
@@ -139,8 +148,8 @@ class QuadrupedController:
                 return CommandDecision(True, "no fault latched")
             if self._lifecycle is not LifecycleState.ACTIVE:
                 return CommandDecision(False, "controller is not active")
-            now = self._clock()
             state = self._backend.read_state()
+            now = self._clock()
             if not state.connected or not self._state_is_fresh(state, now):
                 return CommandDecision(False, "backend is not healthy")
             self._emit_stop("clear fault zero preamble")
@@ -162,10 +171,11 @@ class QuadrupedController:
             self._target_at_s = self._clock()
             return CommandDecision(True, "accepted")
 
-    def tick(self) -> RobotState:
+    def tick(self, state: Optional[RobotState] = None) -> RobotState:
         with self._lock:
+            if state is None:
+                state = self._backend.read_state()
             now = self._clock()
-            state = self._backend.read_state()
             if self._lifecycle is not LifecycleState.ACTIVE:
                 return state
             if not state.connected:
@@ -200,6 +210,11 @@ class QuadrupedController:
                 fault_reason=self._fault_reason,
                 last_output=self._last_output,
             )
+
+    def trip_fault(self, reason: str) -> None:
+        """Latch an adapter/feedback fault before attempting a hardware stop."""
+        with self._lock:
+            self._latch_fault(reason)
 
     def _state_is_fresh(self, state: RobotState, now: float) -> bool:
         age = now - state.received_at_s

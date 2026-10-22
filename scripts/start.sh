@@ -16,6 +16,7 @@ DOCKER_HOST_ADDRESS="${BPX_DOCKER_HOST_ADDRESS:-host.docker.internal}"
 ROBONIX_ATLAS="${ROBONIX_ATLAS:-127.0.0.1:50051}"
 STOP_TIMEOUT_S=30
 CONFIRM_POSTURE=0
+CONFIRM_MOTION=0
 source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
 cli_init 'bash scripts/start.sh [options] (also accepted by start-* wrappers)'
 cli_option --package-root PKG 'Package root'
@@ -35,6 +36,7 @@ cli_option --rmw-implementation RMW_IMPLEMENTATION 'ROS middleware implementatio
 cli_option --zenoh-router ROBONIX_ZENOH_ROUTER 'Zenoh router'
 cli_option --zenoh-mode ROBONIX_ZENOH_MODE 'Zenoh mode'
 cli_flag --confirm-physical-posture-service CONFIRM_POSTURE 'Allow manually invoked posture-test RPC service'
+cli_flag --confirm-physical-motion-test CONFIRM_MOTION 'Allow the unreleased supervised motion-test provider'
 cli_parse "$@"
 cli_no_args
 cli_network "$NETWORK_MODE"
@@ -48,6 +50,11 @@ fi
 if [[ "${BPX_REQUIRE_POSTURE_CONFIRMATION:-0}" == 1 ]]; then
   if ((CONFIRM_POSTURE == 0)) && [[ "${BPX_CONFIRM_PHYSICAL_POSTURE_SERVICE:-}" != I_UNDERSTAND_POSTURE_RPC_CAN_MOVE_BPX ]]; then
     cli_die 'posture-test requires --confirm-physical-posture-service with a local operator present'
+  fi
+fi
+if [[ "${BPX_REQUIRE_MOTION_CONFIRMATION:-0}" == 1 ]]; then
+  if ((CONFIRM_MOTION == 0)) && [[ "${BPX_CONFIRM_PHYSICAL_MOTION_TEST:-}" != I_UNDERSTAND_MOTION_TEST_CAN_MOVE_BPX ]]; then
+    cli_die 'motion-test requires --confirm-physical-motion-test and a local operator'
   fi
 fi
 if [[ "${BPX_REQUIRED_BACKEND:-}" == sdk && -z "$SDK_WHEEL" ]]; then
@@ -153,6 +160,7 @@ docker run --rm \
   -e RBNX_DEPLOY_MANAGED \
   -e BPX_REQUIRED_BACKEND \
   -e BPX_POSTURE_CAPABILITY \
+  -e BPX_MOTION_CAPABILITY \
   -e BPX_REQUIRED_POSTURE_CAPABILITY \
   -e ROBONIX_DRIVER_CONTRACT_ID \
   -e ROBONIX_DRIVER_ALLOW_OLD_ARTIFACT_FALLBACK \

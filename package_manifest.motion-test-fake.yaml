@@ -1,0 +1,17 @@
+# UNRELEASED: no SDK or hardware; never submit as a release variant.
+manifestVersion: 1
+package:
+  name: robonix.primitive.mirrorme.bpx.quadruped.motion_test_fake
+  version: 0.1.0-dev.2
+  description: Fake BPX velocity and bounded-move acceptance provider.
+  tags: [primitive, quadruped, mirrorme, bpx, development, fake]
+  maintainers: ["nonkr <nonkr@hotmail.com>"]
+  license: Apache-2.0
+build: bash scripts/build.sh
+start: bash scripts/start-motion-test-fake.sh
+stop: bash scripts/stop.sh
+capabilities:
+  - name: robonix/primitive/quadruped/odom
+  - name: robonix/primitive/quadruped/twist_in
+  - name: robonix/primitive/quadruped/move
+depends: []

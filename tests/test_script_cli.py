@@ -56,6 +56,16 @@ if len(sys.argv) > 1 and sys.argv[1] == "inspect":
             return []
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
+    def test_motion_start_requires_confirmation_before_docker(self):
+        result = self.run_script("start-motion-test.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--confirm-physical-motion-test", result.stderr)
+        self.assertEqual(self.calls(), [])
+        result = self.run_script("start-motion-test.sh", "--confirm-physical-motion-test")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--sdk-wheel", result.stderr)
+        self.assertEqual(self.calls(), [])
+
     def fake_robonix_source(self):
         source = self.work / "robonix source"
         (source / ".git").mkdir(parents=True)
@@ -73,7 +83,7 @@ elif "submodule" not in sys.argv:
 
     def assert_cache_mounts(self, directories):
         runs = [c["argv"] for c in self.calls() if c["argv"][0] == "run"]
-        self.assertEqual(len(runs), 5)
+        self.assertEqual(len(runs), 6)
         for command in runs:
             mounts = [command[i + 1] for i, argument in enumerate(command) if argument == "-v"]
             for directory, target in zip(directories, ("/target", "/cargo", "/root/.robonix")):
@@ -88,6 +98,10 @@ elif "submodule" not in sys.argv:
         self.assertEqual(result.returncode, 0, result.stderr)
         base = self.work / "cache base with spaces"
         self.assert_cache_mounts([base / name for name in ("target", "cargo", "config")])
+        builds = [c["argv"] for c in self.calls() if "cargo" in c["argv"]]
+        packages = {command[i + 1] for command in builds
+                    for i, arg in enumerate(command) if arg == "-p"}
+        self.assertEqual(packages, {"robonix-cli", "robonix-codegen", "robonix-atlas", "robonix-soma"})
 
     def test_verify_rbnx_resolves_individual_relative_caches_and_existing_symlinks(self):
         source, expected = self.fake_robonix_source()

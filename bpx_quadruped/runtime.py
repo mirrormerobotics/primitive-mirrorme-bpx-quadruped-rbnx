@@ -117,6 +117,22 @@ def build_runtime(
 ) -> ProviderRuntime:
     """Build the single runtime adapter selected by validated configuration."""
 
+    if config.enable_motion_service:
+        from .motion_runtime import MotionRuntime
+        from .sdk_motion import SdkMotionBackend
+        backend = FakeBpxBackend(clock=clock) if config.backend == "fake" else SdkMotionBackend(
+            SdkPostureConfig(SdkStateConfig(
+                robot_ip=config.robot_ip, robot_state_port=config.robot_state_port,
+                tcp_local_port=config.sdk_tcp_local_port, state_rate_hz=config.state_rate_hz,
+                connect_timeout_s=config.sdk_connect_timeout_s, poll_period_s=config.sdk_poll_period_s,
+            ), motion_command_rate_hz=config.command_rate_hz),
+            control_factory=sdk_control_factory, clock=clock, sleep=sleep,
+        )
+        return MotionRuntime(backend, config.controller, command_rate_hz=config.command_rate_hz,
+                             lease_s=config.motion_lease_s, clock=clock, sleep=sleep,
+                             move_min_linear_mps=config.move_min_linear_mps,
+                             move_min_angular_rps=config.move_min_angular_rps)
+
     if config.backend == "fake":
         return QuadrupedController(
             FakeBpxBackend(clock=clock),

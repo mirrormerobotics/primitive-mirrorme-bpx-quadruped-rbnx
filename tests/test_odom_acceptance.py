@@ -66,6 +66,22 @@ class AcceptanceTest(unittest.TestCase):
         result = self.compare(self.recording("a"), self.recording("b", x=3, yaw=2))
         self.assertEqual(result["xy_behavior"], "other_jump")
 
+    def test_missing_provenance_does_not_prove_continuity(self):
+        for event, warning in (("probe_start", "missing_sdk_version"),
+                               ("probe_ready", "missing_robot_version")):
+            with self.subTest(event=event):
+                before = self.recording("before")
+                after = self.recording("after")
+                for name in (before, after):
+                    path = Path(name)
+                    records = [json.loads(line) for line in path.read_text().splitlines()]
+                    path.write_text("".join(json.dumps(r) + "\n" for r in records
+                                            if r.get("event") != event))
+                result = self.compare(before, after)
+                self.assertIn(warning, result["warnings"])
+                self.assertEqual(result["assessment"], "insufficient_evidence")
+                self.assertNotIn("xy_behavior", result)
+
     def test_near_zero_is_inconclusive(self):
         result = self.compare(self.recording("a", x=0, yaw=0), self.recording("b", x=0, yaw=0))
         self.assertEqual(result["xy_behavior"], "near_zero_inconclusive")

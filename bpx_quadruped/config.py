@@ -36,6 +36,15 @@ class ProviderConfig:
     posture_sit_timeout_s: float
     posture_poll_period_s: float
     posture_cleanup_sit_flush_s: float
+    enable_motion_service: bool = False
+    motion_lease_s: float = 30.0
+    move_min_linear_mps: float = 0.25
+    move_min_angular_rps: float = 0.25
+    publish_imu: bool = False
+    imu_topic: str = "/imu/data"
+    imu_frame: str = ""
+    odom_pose_variance: tuple = (1.0,) * 6
+    odom_twist_variance: tuple = (1.0,) * 6
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> "ProviderConfig":
@@ -71,6 +80,11 @@ class ProviderConfig:
             "posture_sit_timeout_s",
             "posture_poll_period_s",
             "posture_cleanup_sit_flush_s",
+            "enable_motion_service",
+            "motion_lease_s",
+            "move_min_linear_mps", "move_min_angular_rps",
+            "publish_imu", "imu_topic", "imu_frame",
+            "odom_pose_variance", "odom_twist_variance",
         }
         unknown = sorted(set(values).difference(allowed))
         if unknown:
@@ -121,13 +135,23 @@ class ProviderConfig:
         if auto_arm_fake and backend != "fake":
             raise ValueError("auto_arm_fake is only valid with backend=fake")
         enable_posture_service = values.get("enable_posture_service", False)
+        enable_motion_service = values.get("enable_motion_service", False)
+        if not isinstance(enable_motion_service, bool):
+            raise ValueError("enable_motion_service must be a boolean")
+        if enable_motion_service:
+            if backend not in {"sdk", "fake"} or not controller.allow_motion:
+                raise ValueError("motion-test requires sdk/fake and allow_motion=true")
+            if enable_posture_service or auto_arm_fake:
+                raise ValueError("motion-test requires local arm and no separate posture service")
+            if not 10 <= command_rate_hz <= 100:
+                raise ValueError("motion-test command_rate_hz must be 10..100")
         if not isinstance(enable_posture_service, bool):
             raise ValueError("enable_posture_service must be a boolean")
         if enable_posture_service and backend != "sdk":
             raise ValueError("enable_posture_service is only valid with backend=sdk")
         if enable_posture_service and not controller.allow_motion:
             raise ValueError("enable_posture_service requires allow_motion=true")
-        if backend == "sdk" and controller.allow_motion and not enable_posture_service:
+        if backend == "sdk" and controller.allow_motion and not (enable_posture_service or enable_motion_service):
             raise ValueError(
                 "backend=sdk requires allow_motion=false unless the guarded "
                 "posture service is enabled"
@@ -149,6 +173,12 @@ class ProviderConfig:
         publish_odom_tf = values.get("publish_odom_tf", False)
         if not isinstance(publish_odom_tf, bool):
             raise ValueError("publish_odom_tf must be a boolean")
+        publish_imu = values.get("publish_imu", False)
+        if not isinstance(publish_imu, bool):
+            raise ValueError("publish_imu must be a boolean")
+        imu_frame = values.get("imu_frame", "")
+        if publish_imu or imu_frame:
+            imu_frame = _frame(imu_frame, "imu_frame")
 
         sdk_tcp_local_port = _bounded_int(
             values.get("sdk_tcp_local_port", 0), "sdk_tcp_local_port", 0, 65535
@@ -187,7 +217,16 @@ class ProviderConfig:
             base_frame=_frame(values.get("base_frame", "base_link"), "base_frame"),
             odom_rate_hz=odom_rate_hz,
             publish_odom_tf=publish_odom_tf,
+            publish_imu=publish_imu,
+            imu_topic=_topic(values.get("imu_topic", "/imu/data"), "imu_topic"),
+            imu_frame=imu_frame,
+            odom_pose_variance=_variance(values.get("odom_pose_variance", [1.0]*6), "odom_pose_variance"),
+            odom_twist_variance=_variance(values.get("odom_twist_variance", [1.0]*6), "odom_twist_variance"),
             auto_arm_fake=auto_arm_fake,
+            enable_motion_service=enable_motion_service,
+            motion_lease_s=_bounded_float(values.get("motion_lease_s", 30.0), "motion_lease_s", 1.0, 120.0),
+            move_min_linear_mps=_bounded_float(values.get("move_min_linear_mps", .25), "move_min_linear_mps", .2, .3),
+            move_min_angular_rps=_bounded_float(values.get("move_min_angular_rps", .25), "move_min_angular_rps", .2, .4),
             enable_posture_service=enable_posture_service,
             posture_stand_timeout_s=_bounded_float(
                 values.get("posture_stand_timeout_s", 15.0),
@@ -270,6 +309,13 @@ def _bounded_float(value: Any, name: str, lower: float, upper: float) -> float:
     result = float(value)
     if not math.isfinite(result) or not lower <= result <= upper:
         raise ValueError("{} must be finite and in {}..{}".format(name, lower, upper))
+    return result
+
+
+def _variance(value, name):
+    if not isinstance(value, (list, tuple)) or len(value) != 6:
+        raise ValueError(name + " must contain six positive variances")
+    result = tuple(_bounded_float(v, name, 1e-12, 1e12) for v in value)
     return result
 
 
