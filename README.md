@@ -1,10 +1,13 @@
 # MirrorMe BPX Quadruped Robonix Primitive
 
-Safety-first Robonix adapter for the MirrorMe BPX quadruped. The release
-surface publishes odometry and exact `stand`/`sit` posture RPCs through one
-SDK owner. The repository also contains a strictly read-only SDK profile,
-normalized state replay, and a non-release fake-motion profile. It does not
-include or redistribute the BPX SDK.
+Version **0.1.0-dev.3** unifies `odom`, exact `stand`/`sit` posture,
+`move` and `twist_in` in one SDK session. Activation stays idle. Motion requires
+standing and healthy feedback, but no manual arm or local lease. Fault recovery
+uses standard DEACTIVATE -> ACTIVATE; no private clear-fault call is required.
+The SDK is supplied externally and is not redistributed.
+
+See the Robot repository's `UNIFIED_TEST_GUIDE.md` for the current launch and
+standard-RPC tests. Release scope and validation are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 The SDK baseline is v1.0.8, pinned to public repository commit
 `cab478a5fd3dfce087e0774534bb87b51a3d69e1`. Download the CPython 3.10 Linux
@@ -15,62 +18,33 @@ the moving `master` HEAD implicitly.
 
 ## Current capability surface
 
-- Release manifests (`package_manifest.yaml` and
-  `package_manifest.x86-docker.yaml`): odom plus the `posture` RPC, restricted
-  to exact `stand` and `sit` names.
-- Explicit SDK read-only manifest: `robonix/primitive/quadruped/odom` only.
-- Replay profile: `robonix/primitive/quadruped/odom` only.
-- Non-release `package_manifest.motion-dev.yaml`: fake backend only, with
-  `robonix/primitive/quadruped/twist_in` and
-  `robonix/primitive/quadruped/odom` for offline safety tests.
-- Hardware-test-only `package_manifest.posture-test.yaml`: alternate SDK test
-  identity with
-  `odom` plus the `posture` RPC, restricted to the exact names `stand` and
-  `sit` and guarded by an explicit local startup acknowledgement.
+- Default and x86 Docker manifests: `odom`, `posture`, `move`, `twist_in`;
+  `start-sdk-unified.sh` uses one `MotionRuntime` and one `SdkMotionBackend`.
+- `package_manifest.unified-fake.yaml`: the same four contracts, simulated state.
+- SDK read-only/replay: odom only; no movement path.
+- `package_manifest.posture-only.yaml` and posture-test: legacy stand/sit-only runtime.
+- motion-test and motion-dev: legacy development profiles, not the unified release.
 
-The production SDK runtime never creates the `twist_in` subscription. Release
-manifests force `backend=sdk`; a later configuration mismatch fails
-initialization. The fake command path has a distinct
-`robonix.primitive.mirrorme.bpx.quadruped.motion_dev` package identity so it
-cannot silently expand the published package's capability surface.
-
-`move` remains absent from every release manifest. `posture` is published
-after its Robonix RPC and true-hardware state closure were validated; the
-distinct `posture_test` identity remains available for diagnostics.
-
-The initial MotionLevelControl integrations were validated through isolated
-hardware-debug probes. The first exposes only `setStandUp()` and
-`setSitDown()` for one bounded stand/hold/sit cycle. A second manual probe uses
-only `setVelocity(0, 0, yaw)` for an odometry-closed-loop in-place circle. The
-validated stand/sit seam is now used by the production posture profile; the
-separate `posture_test` identity remains available for diagnostics. The
-Robonix `setVelocity(x, y, yaw)` mapping behind `twist_in` remains deferred,
-and `JointLevelControl` is out of scope.
-
-BPX does not support mapping, localization, or autonomous navigation. This
-Primitive therefore exposes no map, navigation-goal, path-planning, obstacle,
-lidar, or camera capability. `odom` is body-state feedback only.
-
-The provider also publishes the standard internal ROS 2 topic
-`/joint_states` (`sensor_msgs/JointState`). The fixed SDK index order maps
-directly to the 12 names in the official BPX URDF. This stream is deliberately
-not declared to Atlas because the fixed Robonix baseline has no quadruped
-JointState contract. Position and velocity are published; `effort` remains
-empty until the SDK torque unit is confirmed.
+Posture and move are mutually exclusive. Posture stops an active velocity stream;
+new Twist input is rejected while a posture/move operation owns the channel.
+Posture accepts only stand/sit and honors RPC cancellation and configured timeouts.
+Each move stops on completion, failure or cancellation. Command/state watchdogs,
+limits and fault latching remain active; shutdown never automatically sits.
 
 ## Safety defaults
 
 - The release start entry requires the pinned SDK wheel, forces `backend=sdk`,
-  and enables only guarded posture control.
+  and enables the four unified contracts.
 - The generic runtime config still defaults to `fake`, but only the explicitly
-  selected motion-development manifest may use that backend.
+  selected fake manifests may use that backend.
 - `allow_motion` defaults to `false`; production posture configuration must
-  explicitly set `allow_motion=true` and `enable_posture_service=true`.
-- Activation validates a fresh `LyingDown(0)` or `Motion(6)` state but sends no
+  explicitly set `allow_motion=true`, `enable_posture_service=true` and `enable_motion_service=true`.
+- Activation validates fresh feedback but sends no
   posture command.
 - The controlled fake path emits zero for invalid, stale, disconnected,
-  deactivated and shutdown states. The production SDK path exposes no velocity
-  method and accepts only explicit `stand`/`sit` posture RPCs.
+  deactivated and shutdown states. Unified SDK motion requires standing feedback.
+  DISARMED standby feedback gaps wait for 1 second of stable samples; control-time
+  feedback faults remain latched until explicit lifecycle recovery.
 - No code in this package calls `setZeroPositionsFlag()`.
 
 ## Offline tests
@@ -168,7 +142,7 @@ manual diagnostic; production posture uses the same narrow SDK seam.
 
 `package_manifest.posture-test.yaml` connects the same narrow stand/sit seam to
 `robonix/primitive/quadruped/posture` under a separate diagnostic identity.
-The production package publishes the same RPC without the test-only startup
+The unified release candidate publishes the same RPC without the test-only startup
 acknowledgement. The diagnostic profile requires all of the following:
 
 - the pinned external SDK wheel;
@@ -245,8 +219,8 @@ and verifies shutdown cleanup. The fake variant also publishes a non-planar
 Twist and requires the provider to reject it.
 
 For the integrated SDK runtime, supply the same pinned wheel as an external
-host artifact. The default and x86 Docker release manifests select the guarded
-posture wrapper. It verifies the recorded SHA-256, mounts that one file
+host artifact. The default and x86 Docker release manifests select the unified SDK
+wrapper. The --release-posture launcher option retains the legacy posture-only variant. It verifies the recorded SHA-256, mounts that one file
 read-only, and installs it without contacting a package index:
 
 ```bash
@@ -330,7 +304,7 @@ options. `bash scripts/<name>.sh --help` is side-effect free.
 ## Unreleased motion development
 
 `package_manifest.motion-test-fake.yaml` and `package_manifest.motion-test.yaml`
-provide supervised `twist_in` and standard bounded `move` with a local arm lease,
+provide supervised `twist_in` and standard bounded `move` without a local arm prerequisite,
 feedback guards, cancellation and stop cleanup. Neither is a release manifest.
 See the sibling Robot repository's `MOTION_TEST_GUIDE.md` for operator commands
 and pending physical acceptance. Hardware behavior has not been verified.

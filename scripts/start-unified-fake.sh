@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export BPX_REQUIRED_BACKEND=fake
+export BPX_POSTURE_CAPABILITY=true BPX_REQUIRED_POSTURE_CAPABILITY=true
+export BPX_MOTION_CAPABILITY=true
+export BPX_REQUIRE_MOTION_CONFIRMATION=0 BPX_REQUIRE_POSTURE_CONFIRMATION=0
+exec bash "$(dirname "$0")/start.sh" "$@"

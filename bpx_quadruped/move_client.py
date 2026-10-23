@@ -1,4 +1,4 @@
-"""Manual standard MoveCommand client; local arm is a separate operator action."""
+"""Standard MoveCommand client; no manual arm is required."""
 import argparse
 import json
 import uuid

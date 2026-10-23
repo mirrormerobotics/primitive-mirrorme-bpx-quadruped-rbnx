@@ -1,7 +1,7 @@
-"""Supervised motion, bounded moves, cancellation and local arm leases.
+"""Lifecycle-gated motion, bounded moves, cancellation and watchdogs.
 
 The command loop runs independently of telemetry publication and RPC threads.
-No activation, reconnect, remote RPC or ROS message can grant a local lease.
+Only a new motion request prepares SDK velocity control; activation stays idle.
 """
 
 from dataclasses import dataclass, asdict
@@ -25,6 +25,10 @@ def yaw(state):
 
 def wrap(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
+
+
+class FeedbackUnavailable(RuntimeError):
+    """Transient missing/stale telemetry, distinct from invalid telemetry."""
 
 
 @dataclass(frozen=True)
@@ -60,12 +64,16 @@ class MotionRuntime:
 
     def __init__(self, backend, config, *, command_rate_hz=50, lease_s=30,
                  clock=time.monotonic, sleep=time.sleep, threaded=True,
-                 move_min_linear_mps=0.0, move_min_angular_rps=0.0):
+                 move_min_linear_mps=0.0, move_min_angular_rps=0.0,
+                 enable_posture=False, posture_config=None):
         if not 10 <= command_rate_hz <= 100 or not 1 <= lease_s <= 120:
             raise ValueError("motion rate must be 10..100 Hz and local lease 1..120 s")
         if config.max_linear_x_mps > .3 or config.max_linear_y_mps > .2 or config.max_angular_z_rps > .5:
             raise ValueError("motion-test velocity limits cannot exceed 0.3/0.2/0.5")
         self.backend = backend
+        self.supports_posture = enable_posture
+        self.posture_config = posture_config or PostureCycleConfig(state_timeout_s=config.state_timeout_s)
+        self.posture_config.validate()
         for value, limit in ((move_min_linear_mps, min(.3, config.max_linear_x_mps)),
                              (move_min_angular_rps, min(.4, config.max_angular_z_rps))):
             if isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= limit:
@@ -75,6 +83,7 @@ class MotionRuntime:
         self.controller = QuadrupedController(backend, config, clock)
         self.config = config
         self.clock, self.sleep = clock, sleep
+        # lease_s remains accepted for existing manifests, but has no gating effect.
         self.period, self.lease_s = 1.0 / command_rate_hz, lease_s
         self.threaded = threaded
         self.lock = threading.RLock()
@@ -90,6 +99,11 @@ class MotionRuntime:
         self.released = False
         self.cancel_reason = ""
         self.last_event_at = 0.0
+        self.posture_active = False
+        self.feedback_wait_reason = ""
+        self.feedback_healthy_since = None
+        self.feedback_checked_at = None
+        self.feedback_recovery_s = 1.0
 
     def _event(self, name, **values):
         try:
@@ -100,7 +114,7 @@ class MotionRuntime:
 
     def _healthy(self, state):
         if not state.connected:
-            raise RuntimeError("feedback disconnected")
+            raise FeedbackUnavailable("feedback disconnected")
         try:
             state = normalize_robot_state(state)
         except (ValueError, TypeError) as exc:
@@ -109,9 +123,42 @@ class MotionRuntime:
         if age < 0:
             raise RuntimeError("feedback timestamp is in the future")
         if age > self.config.state_timeout_s:
-            raise RuntimeError("feedback stale: age={:.3f}s limit={:.3f}s odometry_ms={}".format(
+            raise FeedbackUnavailable("feedback stale: age={:.3f}s limit={:.3f}s odometry_ms={}".format(
                 age, self.config.state_timeout_s, state.vendor_timestamps.odometry_ms))
         return state
+
+    def _check_feedback(self):
+        """Called with lock held, before admitting commands and on every cycle.
+
+        Only DISARMED standby can recover missing feedback automatically. Never
+        clear FAULT, ignore malformed data, or resume a saved command here.
+        """
+        self.state = self.backend.read_state()
+        try:
+            self.state = self._healthy(self.state)
+        except FeedbackUnavailable as exc:
+            if self.controller.snapshot().safety is not SafetyState.DISARMED or self.posture_active:
+                raise
+            if not self.feedback_wait_reason:
+                self.disarm("standby feedback unavailable")  # stop failure still latches FAULT
+                self._event("feedback_wait", reason=str(exc))
+            self.feedback_wait_reason = str(exc)
+            self.feedback_healthy_since = None
+            self.feedback_checked_at = None
+            return False
+        if self.feedback_wait_reason:
+            now = self.clock()
+            if (self.feedback_healthy_since is None or self.feedback_checked_at is None or
+                    now-self.feedback_checked_at > self.config.state_timeout_s):
+                self.feedback_healthy_since = now
+            self.feedback_checked_at = now
+            if now-self.feedback_healthy_since < self.feedback_recovery_s:
+                return False
+            self.feedback_wait_reason = ""
+            self.feedback_healthy_since = None
+            self.feedback_checked_at = None
+            self._event("feedback_ready", stable_s=self.feedback_recovery_s)
+        return True
 
     def activate(self):
         with self.lock:
@@ -157,15 +204,14 @@ class MotionRuntime:
             self._disable()
 
     def cycle(self):
-        """Validate feedback before issuing this cycle's command; latch all errors."""
+        """Wait through standby feedback gaps; latch faults during control."""
         with self.lock:
             if self.controller.snapshot().lifecycle is not LifecycleState.ACTIVE:
                 return
             try:
-                state = self.backend.read_state()
-                self.state = state
-                healthy = self._healthy(state)
-                state = self.state = healthy
+                if not self._check_feedback():
+                    return
+                state = self.state
                 old = self.previous
                 if old is not None:
                     old_ts, new_ts = old.vendor_timestamps.odometry_ms, state.vendor_timestamps.odometry_ms
@@ -180,8 +226,6 @@ class MotionRuntime:
                 if self.controller.snapshot().safety is SafetyState.ARMED:
                     if state.motion_state not in (None, 6):
                         raise RuntimeError("robot left standing motion state")
-                    if self.clock() >= self.lease_until:
-                        self.disarm("local arm lease expired")
                 self.controller.tick(state)
                 snapshot = self.controller.snapshot()
                 if snapshot.safety is SafetyState.FAULT:
@@ -201,27 +245,42 @@ class MotionRuntime:
             return self.state
 
     def arm(self):
-        """Called only by the local Unix control endpoint, never by a remote RPC."""
+        """Compatibility endpoint; normal motion requests do not require this."""
         with self.lock:
             if self.operation.locked():
                 return CommandDecision(False, "operation in progress")
-            if self.controller.snapshot().safety is SafetyState.ARMED:
-                return CommandDecision(False, "disarm before issuing a new local lease")
-            decision = self.controller.arm()
-            if not decision.accepted:
-                return decision
-            try:
+            return self._prepare_command()
+
+    def _prepare_command(self):
+        """Admit a fresh request without a private arm RPC or expiring lease.
+
+        Caller holds self.lock. Never clear a fault or activate a lifecycle here.
+        The SDK still checks standing state before selecting Walk.
+        """
+        snapshot = self.controller.snapshot()
+        if self.released or snapshot.lifecycle is not LifecycleState.ACTIVE:
+            return CommandDecision(False, "runtime is not active or control released")
+        if snapshot.safety is SafetyState.FAULT:
+            return CommandDecision(False, "fault must be explicitly cleared")
+        try:
+            if not self._check_feedback():
+                return CommandDecision(False, "feedback not ready; waiting for 1.0s of stable feedback")
+            if self.state.motion_state not in (None, 6):
+                return CommandDecision(False, "robot must be standing before motion")
+            if snapshot.safety is not SafetyState.ARMED:
+                decision = self.controller.arm()
+                if not decision.accepted:
+                    return decision
                 prepare = getattr(self.backend, "prepare_motion", None)
                 if prepare:
                     prepare()
-                self.lease_until = self.clock() + self.lease_s
                 self.cancelled.clear()
                 self.cancel_reason = ""
-                self._event("armed", lease_s=self.lease_s)
-                return CommandDecision(True, "locally armed for {} seconds".format(self.lease_s))
-            except Exception as exc:
-                self._fault(str(exc))
-                return CommandDecision(False, str(exc))
+                self._event("motion_ready", authorization="active_lifecycle")
+            return CommandDecision(True, "motion ready; no local arm required")
+        except Exception as exc:
+            self._fault(str(exc))
+            return CommandDecision(False, str(exc))
 
     def disarm(self, reason="local disarm"):
         with self.lock:
@@ -265,40 +324,78 @@ class MotionRuntime:
         with self.lock:
             if self.operation.locked():
                 return CommandDecision(False, "move/posture owns the command channel")
-            if self.clock() >= self.lease_until:
-                return CommandDecision(False, "local arm required")
+            if not command.is_finite():
+                self._fault("non-finite twist")
+                return CommandDecision(False, "non-finite twist")
+            decision = self._prepare_command()
+            if not decision.accepted:
+                return decision
             return self.controller.submit_twist(command)
 
-    def set_posture(self, name):
-        return CommandDecision(False, "use local stand/sit in the motion-test profile")
+    def set_posture(self, name, cancelled=lambda: False):
+        if not self.supports_posture:
+            return CommandDecision(False, "posture capability is disabled")
+        return self.local_posture(name, cancelled=cancelled)
 
-    def local_posture(self, name):
+    def local_posture(self, name, cancelled=lambda: False):
         if name not in ("stand", "sit"):
             return CommandDecision(False, "unsupported posture")
         if not self.operation.acquire(False):
             return CommandDecision(False, "operation already in progress")
+        admitted = False
         try:
             with self.lock:
                 if self.controller.snapshot().lifecycle is not LifecycleState.ACTIVE:
                     return CommandDecision(False, "runtime is not active")
                 if self.controller.snapshot().safety is SafetyState.FAULT:
                     return CommandDecision(False, "clear fault before posture")
+                if not self.config.allow_motion:
+                    return CommandDecision(False, "allow_motion is false")
+                if cancelled():
+                    return CommandDecision(False, "posture RPC cancelled before admission")
+                if not self._check_feedback():
+                    return CommandDecision(False, "feedback not ready; waiting for 1.0s of stable feedback")
+                admitted = True
+                self.posture_active = True
                 self.disarm("local posture")
                 self.cancelled.clear()
             request = getattr(self.backend, "request_stand_up" if name == "stand" else "request_sit_down", None)
             if request is None:
                 return CommandDecision(False, "backend has no posture API")
-            command_until_state(self.backend, PostureCycleConfig(), target_state=6 if name == "stand" else 0,
-                                target_name=name, command=request, command_name=name, timeout_s=15,
-                                clock=self.clock, sleep=self.sleep, stop_requested=self.cancelled.is_set,
+            # Serialize the final cancellation check and SDK request with lifecycle
+            # stop, so no posture command can race past DEACTIVATE/release.
+            def guarded_request():
+                with self.lock:
+                    if (cancelled() or self.cancelled.is_set() or
+                            self.controller.snapshot().lifecycle is not LifecycleState.ACTIVE):
+                        raise InterruptedError("posture cancelled")
+                    return request()
+            command_until_state(self.backend, self.posture_config, target_state=6 if name == "stand" else 0,
+                                target_name=name, command=guarded_request, command_name=name,
+                                timeout_s=(self.posture_config.stand_timeout_s if name == "stand"
+                                           else self.posture_config.sit_timeout_s),
+                                clock=self.clock, sleep=self.sleep,
+                                stop_requested=lambda: self.cancelled.is_set() or cancelled(),
                                 report=lambda text: None)
+            with self.lock:
+                if self.cancelled.is_set() or cancelled():
+                    return CommandDecision(False, "posture cancelled")
+                self.state = self._healthy(self.backend.read_state())
             return CommandDecision(True, name + " confirmed")
+        except InterruptedError:
+            return CommandDecision(False, "posture cancelled")
         except Exception as exc:
             with self.lock:
                 self._fault(str(exc))
             return CommandDecision(False, str(exc))
         finally:
-            self.operation.release()
+            try:
+                if admitted:
+                    self.disarm("posture finished")
+            finally:
+                with self.lock:
+                    self.posture_active = False
+                self.operation.release()
 
     def execute_move(self, request, cancelled=lambda: False):
         """Use initial body heading for distance and unwrapped yaw for rotation.
@@ -316,8 +413,11 @@ class MotionRuntime:
         admitted = False
         try:
             with self.lock:
-                if self.controller.snapshot().safety is not SafetyState.ARMED or self.clock() >= self.lease_until:
-                    return CommandDecision(False, "local arm required")
+                if cancelled():
+                    return CommandDecision(False, "RPC cancelled before admission")
+                decision = self._prepare_command()
+                if not decision.accepted:
+                    return decision
                 admitted = True
                 self.last_move = None
                 self.cancelled.clear()
@@ -344,8 +444,8 @@ class MotionRuntime:
                         return self._move_result(False, "motion fault: " + snapshot.fault_reason)
                     if cancelled() or self.cancelled.is_set():
                         return self._move_result(False, "move cancelled: " + (self.cancel_reason or "RPC cancelled/deadline"))
-                    if self.controller.snapshot().safety is not SafetyState.ARMED or self.clock() >= self.lease_until:
-                        return self._move_result(False, "local lease expired or motion disarmed")
+                    if self.controller.snapshot().safety is not SafetyState.ARMED:
+                        return self._move_result(False, "motion stopped")
                     state = self.tick()
                     state = self._healthy(state)
                     dx, dy = state.position_m[0] - start.position_m[0], state.position_m[1] - start.position_m[1]
@@ -452,8 +552,14 @@ class MotionRuntime:
             snapshot = self.controller.snapshot()
             return {"lifecycle": snapshot.lifecycle.value, "safety": snapshot.safety.value,
                     "fault": snapshot.fault_reason, "lease_remaining_s": max(0, self.lease_until - self.clock()),
+                    "arm_required": False, "authorization": "active_lifecycle",
                     "busy": self.operation.locked(), "released": self.released,
-                    "health": "released" if self.released else snapshot.safety.value,
+                    "health": ("released" if self.released else "fault" if snapshot.safety is SafetyState.FAULT
+                               else "waiting_feedback" if self.feedback_wait_reason else snapshot.safety.value),
+                    "feedback_ready": (snapshot.lifecycle is LifecycleState.ACTIVE and not self.released
+                                       and not self.feedback_wait_reason and snapshot.safety is not SafetyState.FAULT),
+                    "feedback_wait_reason": self.feedback_wait_reason,
+                    "feedback_recovery_s": self.feedback_recovery_s,
                     "feedback": self._feedback(), "last_fault": self.last_fault,
                     "last_move": self.last_move,
                     "bounded_move_minimum": {"linear_mps":self.move_min_linear_mps,

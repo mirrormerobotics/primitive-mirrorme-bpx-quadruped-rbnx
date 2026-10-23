@@ -47,7 +47,7 @@ class PackagingNamesTest(unittest.TestCase):
             self.assertIn("name: {}".format(PACKAGE_NAME), manifest)
             self.assertIn("mirrorme", manifest)
 
-    def test_release_manifests_publish_odom_and_posture_without_twist(self) -> None:
+    def test_release_manifests_publish_all_unified_contracts(self) -> None:
         for filename in (
             "package_manifest.yaml",
             "package_manifest.x86-docker.yaml",
@@ -55,13 +55,14 @@ class PackagingNamesTest(unittest.TestCase):
             manifest = (PACKAGE_ROOT / filename).read_text(encoding="utf-8")
             self.assertIn("name: {}".format(PACKAGE_NAME), manifest)
             self.assertEqual(
-                2,
+                4,
                 manifest.count("  - name: robonix/primitive/quadruped/"),
             )
             self.assertIn("  - name: robonix/primitive/quadruped/odom", manifest)
             self.assertIn("  - name: robonix/primitive/quadruped/posture", manifest)
-            self.assertNotIn("robonix/primitive/quadruped/twist_in", manifest)
-            self.assertIn("start: bash scripts/start-sdk-posture.sh", manifest)
+            self.assertIn("robonix/primitive/quadruped/twist_in", manifest)
+            self.assertIn("robonix/primitive/quadruped/move", manifest)
+            self.assertIn("start: bash scripts/start-sdk-unified.sh", manifest)
 
         for filename in (
             "package_manifest.sdk-read-only.yaml",

@@ -141,13 +141,13 @@ class ProviderConfig:
         if enable_motion_service:
             if backend not in {"sdk", "fake"} or not controller.allow_motion:
                 raise ValueError("motion-test requires sdk/fake and allow_motion=true")
-            if enable_posture_service or auto_arm_fake:
-                raise ValueError("motion-test requires local arm and no separate posture service")
+            if auto_arm_fake:
+                raise ValueError("motion service does not use auto_arm_fake")
             if not 10 <= command_rate_hz <= 100:
                 raise ValueError("motion-test command_rate_hz must be 10..100")
         if not isinstance(enable_posture_service, bool):
             raise ValueError("enable_posture_service must be a boolean")
-        if enable_posture_service and backend != "sdk":
+        if enable_posture_service and backend != "sdk" and not (backend == "fake" and enable_motion_service):
             raise ValueError("enable_posture_service is only valid with backend=sdk")
         if enable_posture_service and not controller.allow_motion:
             raise ValueError("enable_posture_service requires allow_motion=true")

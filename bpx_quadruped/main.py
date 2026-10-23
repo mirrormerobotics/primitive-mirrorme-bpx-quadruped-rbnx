@@ -96,7 +96,11 @@ def _on_set_posture(request, _context=None):
     runtime = _runtime
     if runtime is None:
         return SetPosture_Response(success=False, message="provider was not initialized")
-    decision = runtime.set_posture(str(request.posture_name))
+    if getattr(runtime, "supports_move", False):
+        decision = runtime.set_posture(str(request.posture_name),
+                                       cancelled=lambda: _context is not None and not _context.is_active())
+    else:
+        decision = runtime.set_posture(str(request.posture_name))
     if not decision.accepted:
         log.warning("posture rejected: %s", decision.reason)
     return SetPosture_Response(
@@ -177,6 +181,8 @@ def _publish_loop() -> None:
                 health["motion"] = motion
                 if motion["fault"] or motion["released"]:
                     health.update(level=2, message=motion["fault"] or "control released")
+                elif motion.get("health") == "waiting_feedback":
+                    health.update(level=max(1, health["level"]), message="waiting for stable feedback")
             elif hasattr(_runtime, "snapshot"):
                 snapshot = _runtime.snapshot()
                 health["safety"] = snapshot.safety.value
@@ -267,7 +273,7 @@ def on_init(cfg: Dict[str, Any]):
     try:
         config = ProviderConfig.from_mapping(cfg)
         if config.enable_motion_service != _MOTION_CAPABILITY_ENABLED:
-            raise ValueError("motion config does not match the non-release motion-test identity")
+            raise ValueError("motion config does not match registered capabilities")
         validate_required_backend(config, os.environ.get("BPX_REQUIRED_BACKEND"))
         validate_required_posture_capability(
             config, os.environ.get("BPX_REQUIRED_POSTURE_CAPABILITY")

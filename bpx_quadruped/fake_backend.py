@@ -19,7 +19,7 @@ from .model import (
 
 
 class FakeBpxBackend:
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic, *, posture=False) -> None:
         self._clock = clock
         self._lock = threading.RLock()
         self._connected = False
@@ -30,6 +30,7 @@ class FakeBpxBackend:
         self._x = 0.0
         self._y = 0.0
         self._yaw = 0.0
+        self._motion_state = 0 if posture else None
         self.commands: List[BackendCommand] = []
         self.start_count = 0
         self.stop_count = 0
@@ -79,6 +80,7 @@ class FakeBpxBackend:
             if not self._freeze_state:
                 self._last_state_at = now
             return RobotState(
+                motion_state=self._motion_state,
                 connected=self._connected,
                 received_at_s=self._last_state_at,
                 position_m=(self._x, self._y, 0.0),
@@ -93,6 +95,17 @@ class FakeBpxBackend:
                 joint_velocity_rad_s=(0.0,) * 12,
                 joint_torque_nm=(0.0,) * 12,
             )
+
+    def request_stand_up(self):
+        with self._lock:
+            self._motion_state = 6
+            return True
+
+    def request_sit_down(self):
+        with self._lock:
+            self._motion_state = 0
+            self._twist = ZERO_TWIST
+            return True
 
     def set_connected(self, connected: bool) -> None:
         with self._lock:

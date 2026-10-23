@@ -4,11 +4,11 @@
 # Runtime validation is implemented by bpx_quadruped.config.
 
 config:
-  # UNRELEASED motion-test manifests only. SDK/fake, allow_motion=true;
-  # incompatible with enable_posture_service and auto_arm_fake. Activation is
-  # disarmed; only a container-local Unix socket command grants a lease.
+  # Unified release and motion-test profiles. SDK/fake, allow_motion=true;
+  # can share enable_posture_service, but not auto_arm_fake. Activation is
+  # idle; new commands prepare motion while ACTIVE, without a local arm lease.
   enable_motion_service: false
-  # Local operator lease duration, 1..120 seconds. No remote renewal.
+  # Deprecated compatibility option (1..120); ignored, no motion lease.
   motion_lease_s: 30.0
   # Bounded move only: Walk ignores small setpoints. SI units, default 0.25.
   # Does NOT amplify incoming Twist or timed-velocity requests.
@@ -16,7 +16,7 @@ config:
   move_min_angular_rps: 0.25
   # enum string: fake, sdk, or replay; default: fake.
   # sdk requires a verified, externally mounted BPX_SDK_WHEEL. The production
-  # manifest enables only the guarded stand/sit posture service; the explicit
+  # manifest enables unified posture/move/twist control; the explicit
   # sdk-read-only manifest keeps allow_motion=false.
   backend: fake
 
@@ -25,12 +25,12 @@ config:
   replay_path:
 
   # boolean, default: false.
-  # Process-level gate only. It never replaces local arm or a physical E-stop.
+  # Process-level gate only. It never replaces a physical E-stop.
   allow_motion: false
 
-  # boolean, default: false. Valid only with backend=sdk and
-  # allow_motion=true. This selects the stand/sit-only SDK runtime;
-  # it does not enable twist, gait, damping, or joint-level commands.
+  # boolean, default: false. Requires allow_motion=true. SDK posture-only
+  # when enable_motion_service=false; shared posture/motion runtime otherwise.
+  # Unified fake supports this for offline tests. No gait or joint control.
   enable_posture_service: false
 
   # string IPv4 address, default: 10.21.20.1.

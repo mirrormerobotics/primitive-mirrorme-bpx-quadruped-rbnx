@@ -56,22 +56,17 @@ def stopped():
 try:
     status = local("status")
     assert status["safety"] == "disarmed", status
-    assert not call_move(MoveRequest(forward_m=.1))["success"]
     start = sample().pose.pose.position
-    local("arm")
     assert call_move(MoveRequest(forward_m=.1))["success"]
     end = sample().pose.pose.position
     assert .07 < math.hypot(end.x-start.x, end.y-start.y) < .14
     assert local("status")["safety"] == "disarmed"
     stopped()
     for degrees in (30, -30):
-        local("arm")
         assert call_move(MoveRequest(rotate_deg=degrees))["success"]
         stopped()
-    local("arm")
     assert call_move(MoveRequest(linear_x=.1, duration_sec=.5))["success"]
     stopped()
-    local("arm")
     try:
         call_move(MoveRequest(linear_x=.1, duration_sec=5), timeout_s=.3)
         raise AssertionError("deadline did not cancel RPC")
@@ -80,7 +75,6 @@ try:
         assert isinstance(exc, grpc.RpcError), exc
     stopped()
     assert local("status")["safety"] == "disarmed"
-    local("arm")
     msg = Twist()
     msg.linear.x = .1
     for _ in range(20):

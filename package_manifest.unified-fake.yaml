@@ -1,0 +1,24 @@
+# Offline only: unified contracts with a simulated robot, no SDK.
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.mirrorme.bpx.quadruped.unified_fake
+  version: 0.1.0-dev.3
+  description: MirrorMe BPX odometry, stand/sit, bounded move and velocity provider with a Dockerized ROS 2 Humble runtime.
+  tags: [primitive, quadruped, mirrorme, bpx, ros2, docker, odom, posture, move, twist]
+  maintainers:
+    - M1chael0919 <2956011381@qq.com>
+  license: Apache-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start-unified-fake.sh
+stop: bash scripts/stop.sh
+
+# One SDK owner serves posture and motion. Startup remains idle; no arm RPC required.
+capabilities:
+  - name: robonix/primitive/quadruped/odom
+  - name: robonix/primitive/quadruped/posture
+  - name: robonix/primitive/quadruped/twist_in
+  - name: robonix/primitive/quadruped/move
+
+depends: []

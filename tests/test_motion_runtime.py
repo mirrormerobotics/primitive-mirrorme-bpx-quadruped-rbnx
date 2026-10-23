@@ -34,10 +34,14 @@ class MotionTest(unittest.TestCase):
     def arm(self):
         self.assertTrue(self.runtime.arm().accepted)
 
-    def test_activation_remote_move_and_twist_cannot_arm(self):
+    def test_activation_is_idle_and_remote_commands_need_no_arm(self):
         self.assertEqual(self.runtime.status()["safety"], "disarmed")
-        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
-        self.assertFalse(self.runtime.execute_move(MoveRequest(forward_m=.1)).accepted)
+        self.assertTrue(self.backend.current_twist.is_zero())
+        self.assertTrue(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertTrue(self.runtime.execute_move(MoveRequest(forward_m=.1)).accepted)
+        self.assertTrue(self.runtime.execute_move(MoveRequest(forward_m=-.1)).accepted)
+        self.assertTrue(self.backend.current_twist.is_zero())
+        self.assertFalse(self.runtime.status()['arm_required'])
 
     def test_clock_advancing_during_read_is_not_future_state(self):
         read = self.backend.read_state
@@ -190,7 +194,7 @@ class MotionTest(unittest.TestCase):
         self.assertTrue(decisions)
         self.assertTrue(all(not d.accepted for d in decisions))
 
-    def test_stale_disconnect_and_reconnect_require_clear_and_new_local_arm(self):
+    def test_stale_disconnect_and_reconnect_require_explicit_clear(self):
         for freeze in (True, False):
             self.arm()
             if freeze:
@@ -205,19 +209,65 @@ class MotionTest(unittest.TestCase):
             self.backend.set_state_frozen(False)
             self.runtime.cycle()
             self.assertFalse(self.runtime.arm().accepted)
-            self.assertTrue(self.runtime.clear_fault().accepted)
             self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+            self.assertTrue(self.runtime.clear_fault().accepted)
+            self.assertTrue(self.backend.current_twist.is_zero())
+            self.assertTrue(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
 
-    def test_lease_and_lifecycle_do_not_replay_command(self):
-        self.arm()
+    def test_no_lease_but_watchdog_and_lifecycle_still_stop(self):
         self.runtime.submit_twist(PlanarTwist(.2))
         self.clock.sleep(31)
         self.runtime.cycle()
-        self.assertEqual(self.runtime.status()["safety"], "disarmed")
-        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertTrue(self.backend.current_twist.is_zero())
+        self.assertTrue(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
         self.runtime.deactivate()
+        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertFalse(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
         self.runtime.activate()
         self.assertEqual(self.runtime.status()["safety"], "disarmed")
+        self.assertTrue(self.backend.current_twist.is_zero())
+        self.assertTrue(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
+
+    def test_prepare_runs_per_session_and_never_on_activation(self):
+        prepared = []
+        self.backend.prepare_motion = lambda: prepared.append(self.clock())
+        self.assertEqual(prepared, [])
+        for _ in range(2):
+            self.assertTrue(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
+        self.assertEqual(len(prepared), 2)
+        for _ in range(3):
+            self.assertTrue(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertEqual(len(prepared), 3)
+
+    def test_legacy_lease_cannot_expire_a_move(self):
+        self.runtime.lease_s = 1
+        self.arm()  # Old clients remain compatible but grant no timed lease.
+        self.clock.sleep(31)
+        self.runtime.cycle()
+        result = self.runtime.execute_move(MoveRequest(linear_x=.1, duration_sec=2))
+        self.assertTrue(result.accepted, result.reason)
+        self.assertTrue(self.backend.current_twist.is_zero())
+
+    def test_prepare_failure_latches_and_new_request_cannot_clear_it(self):
+        def fail():
+            raise RuntimeError('SDK preparation failed')
+        self.backend.prepare_motion = fail
+        self.assertFalse(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
+        self.assertEqual(self.runtime.status()['safety'], 'fault')
+        del self.backend.prepare_motion
+        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertTrue(self.runtime.clear_fault().accepted)
+        self.assertTrue(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
+
+    def test_not_standing_or_disabled_cannot_prepare(self):
+        read = self.backend.read_state
+        self.backend.read_state = lambda: replace(read(), motion_state=0)
+        self.assertFalse(self.runtime.execute_move(MoveRequest(duration_sec=.1)).accepted)
+        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
+        self.assertTrue(self.backend.current_twist.is_zero())
+        self.backend.read_state = read
+        self.runtime.controller._config = replace(self.runtime.config, allow_motion=False)
+        self.assertFalse(self.runtime.submit_twist(PlanarTwist(.1)).accepted)
 
     def test_invalid_requests_have_no_output(self):
         self.arm()
@@ -260,8 +310,8 @@ class MotionTest(unittest.TestCase):
             finally:
                 server.close()
 
-    def test_config_cannot_auto_arm_motion_or_mix_posture(self):
-        for extra in ({"auto_arm_fake": True}, {"enable_posture_service": True}, {"backend": "replay"}):
+    def test_config_cannot_auto_arm_motion_or_use_replay(self):
+        for extra in ({"auto_arm_fake": True}, {"backend": "replay"}):
             with self.assertRaises(ValueError):
                 ProviderConfig.from_mapping({"backend": "fake", "allow_motion": True,
                                              "enable_motion_service": True, **extra})

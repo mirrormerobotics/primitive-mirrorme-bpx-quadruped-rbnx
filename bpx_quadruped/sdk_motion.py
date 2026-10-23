@@ -17,10 +17,10 @@ class SdkMotionBackend(SdkPostureSession):
                 raise RuntimeError("MotionLevelControl is missing: " + name)
 
     def prepare_motion(self):
-        """Only local arm selects Walk and enables a previously zeroed command."""
+        """Prepare Walk for a new motion command after checking standing state."""
         with self._sdk_lock:
             if self.read_state().motion_state != MOTION_STATE_MOTION:
-                raise RuntimeError("stand must be confirmed before local arm")
+                raise RuntimeError("stand must be confirmed before motion")
             control = self._require_started_control()
             if not control.setVelocity(0.0, 0.0, 0.0):
                 raise RuntimeError("SDK rejected zero preamble")
