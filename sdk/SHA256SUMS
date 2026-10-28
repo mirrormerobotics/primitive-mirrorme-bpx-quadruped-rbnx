@@ -1,3 +1,5 @@
 # BPX SDK v1.0.8 release, pinned public repository commit:
 # cab478a5fd3dfce087e0774534bb87b51a3d69e1
 23dec27cd4c90cfe5531fbccf5db15e44c5ec4d4b6d2a76941e61def957db115  bpx_sdk_open-1.0.8-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+# v1.0.9 stable; f8d73125c04bfca81ae7b7d7d4b3071285ed4303
+9116348aa8a4764c93dd6305305f8478c71404d852df1be84b1f3d3424138766  bpx_sdk_open-1.0.9-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl

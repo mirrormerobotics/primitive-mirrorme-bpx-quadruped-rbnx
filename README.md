@@ -1,6 +1,6 @@
 # MirrorMe BPX Quadruped Robonix Primitive
 
-Version **0.1.0-dev.3** unifies `odom`, exact `stand`/`sit` posture,
+Version **0.1.0-dev.4** unifies `odom`, exact `stand`/`sit` posture,
 `move` and `twist_in` in one SDK session. Activation stays idle. Motion requires
 standing and healthy feedback, but no manual arm or local lease. Fault recovery
 uses standard DEACTIVATE -> ACTIVATE; no private clear-fault call is required.
@@ -9,12 +9,15 @@ The SDK is supplied externally and is not redistributed.
 See the Robot repository's `UNIFIED_TEST_GUIDE.md` for the current launch and
 standard-RPC tests. Release scope and validation are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
-The SDK baseline is v1.0.8, pinned to public repository commit
-`cab478a5fd3dfce087e0774534bb87b51a3d69e1`. Download the CPython 3.10 Linux
+The SDK baseline is v1.0.9, pinned to public repository commit
+`f8d73125c04bfca81ae7b7d7d4b3071285ed4303`. Download the CPython 3.10 Linux
 x86_64 wheel from the fixed
-[`v1.0.8` release](https://github.com/mirrormerobotics/bpx_sdk_open/releases/tag/v1.0.8),
+[`v1.0.9` release](https://github.com/mirrormerobotics/bpx_sdk_open/releases/tag/v1.0.9),
 then pass its local path using `--sdk-wheel` to the launcher. The adapter does not follow
 the moving `master` HEAD implicitly.
+
+See [SDK_COMPATIBILITY.md](SDK_COMPATIBILITY.md) for the supported stable artifacts and validation.
+dev.4 supports SDK 1.0.9 and retains 1.0.8 fallback. Prereleases 1.0.10/1.0.11 are not enabled.
 
 ## Current capability surface
 
@@ -73,7 +76,7 @@ The wheel stays outside this repository. Verification mounts it read-only into
 an isolated container and checks the recorded SHA-256 before importing it:
 
 ```bash
-bash scripts/verify-sdk-wheel.sh /path/to/bpx_sdk_open-1.0.8-cp310-...x86_64.whl
+bash scripts/verify-sdk-wheel.sh /path/to/bpx_sdk_open-1.0.9-cp310-...x86_64.whl
 ```
 
 For a bounded, state-only hardware capture:
@@ -225,7 +228,7 @@ read-only, and installs it without contacting a package index:
 
 ```bash
 bash ../robot-mirrorme-bpx/scripts/start-sdk-read-only-docker.sh \
-  --sdk-wheel /absolute/path/to/bpx_sdk_open-1.0.8-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl \
+  --sdk-wheel /absolute/path/to/bpx_sdk_open-1.0.9-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl \
   --robot-ip 192.168.1.237 --release-posture \
   --confirm-physical-posture-service
 ```

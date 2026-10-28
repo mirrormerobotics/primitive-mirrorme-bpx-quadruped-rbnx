@@ -31,7 +31,7 @@ if [[ -n "${BPX_SDK_WHEEL:-}" ]]; then
     exit 1
   }
   python3 -m pip install --no-index --no-deps --force-reinstall "$BPX_SDK_WHEEL"
-  python3 -c 'import bpx_sdk; assert bpx_sdk.__version__ == "1.0.8"'
+  python3 -c 'import bpx_sdk; from bpx_quadruped.sdk_compat import validate_sdk_version; validate_sdk_version(bpx_sdk)'
 fi
 
 exec "$@"

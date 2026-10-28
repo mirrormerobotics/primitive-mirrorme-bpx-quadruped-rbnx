@@ -5,7 +5,7 @@ PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
 # RBNX_BUILD_CLEAN is supplied by the package lifecycle, not an operator setting.
 CLEAN="${RBNX_BUILD_CLEAN:-0}"
-IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:dev}"
+IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:0.1.0-dev.4}"
 TEST_IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:test"
 USE_TUNA_MIRROR=1
 cli_init 'bash scripts/build.sh [options]'

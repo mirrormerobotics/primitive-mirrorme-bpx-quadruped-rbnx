@@ -1,3 +1,16 @@
+# v0.1.0-dev.4 — 2026-10-28
+
+Support the pinned BPX SDK 1.0.9 stable wheel, retaining 1.0.8 fallback.
+Reject 1.0.10/1.0.11 prereleases in this release. Capability scope remains
+odom, stand/sit, move and twist_in; no new motion or gait interfaces.
+Robot pins Primitive v0.1.0-dev.4. Build/start use the versioned dev.4 runtime
+image to avoid reusing an entrypoint that accepts only SDK 1.0.8.
+Validation: 196 Primitive + 46 Robot unit tests, model generation, isolated fake
+Atlas/ROS/gRPC integration, SDK 1.0.9 native loopback and actual image entrypoint,
+and SDK 1.0.8 unified API fallback checks passed.
+Native SDK checks and loopback tests are offline; SDK 1.0.9 hardware testing
+remains pending. No physical robot commands are issued during release validation.
+
 # v0.1.0-dev.3 — 2026-10-23
 
 Unified BPX control: one SDK owner provides odom, exact stand/sit posture,

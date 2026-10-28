@@ -123,7 +123,7 @@ class PackagingNamesTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("name = {}".format(DISTRIBUTION_NAME), setup)
-        self.assertIn("{}:dev".format(IMAGE_NAME), build_script)
+        self.assertIn("{}:0.1.0-dev.4".format(IMAGE_NAME), build_script)
 
     def test_runtime_pins_robonix_api_wire_dependencies(self) -> None:
         dockerfile = (PACKAGE_ROOT / "docker/Dockerfile").read_text(encoding="utf-8")

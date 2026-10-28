@@ -2,7 +2,7 @@ manifestVersion: 1
 
 package:
   name: robonix.primitive.mirrorme.bpx.quadruped
-  version: 0.1.0-dev.3
+  version: 0.1.0-dev.4
   description: MirrorMe BPX odometry, stand/sit, bounded move and velocity provider for x86_64 with a Dockerized ROS 2 Humble runtime.
   tags: [primitive, quadruped, mirrorme, bpx, ros2, docker, x86-64, odom, posture, move, twist]
   maintainers:

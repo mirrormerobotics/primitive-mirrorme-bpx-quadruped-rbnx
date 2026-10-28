@@ -137,8 +137,8 @@ class SdkStateSource:
         if self._request_factory is not None:
             return self._request_factory()
         sdk = importlib.import_module("bpx_sdk")
-        if getattr(sdk, "__version__", None) != "1.0.8":
-            raise RuntimeError("BPX SDK version 1.0.8 is required")
+        from .sdk_compat import validate_sdk_version
+        validate_sdk_version(sdk)
         return sdk.RequestRobotState()
 
     def _clear_cache(self) -> None:

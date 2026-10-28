@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:dev"
+IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:0.1.0-dev.4"
 TEST_IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:test"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
 CLEAN=0

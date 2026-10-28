@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:dev}"
+IMAGE="${BPX_RBNX_IMAGE:-primitive-mirrorme-bpx-quadruped-rbnx:0.1.0-dev.4}"
 CONTAINER="${BPX_RBNX_CONTAINER:-rbnx_mirrorme_bpx_quadruped}"
 LABEL_KEY="ai.robonix.package"
 LABEL_VALUE="robonix.primitive.mirrorme.bpx.quadruped"

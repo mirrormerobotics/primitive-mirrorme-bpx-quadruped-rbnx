@@ -3,24 +3,28 @@ set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/cli.sh"
-IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:dev"
+IMAGE="primitive-mirrorme-bpx-quadruped-rbnx:0.1.0-dev.4"
 POSTURE=0
 YAW_CIRCLE=0
+UNIFIED=0
+LOOPBACK=0
 SDK_PROFILE=release
 cli_init 'bash scripts/verify-sdk-wheel.sh WHEEL [options]'
 cli_option --image IMAGE 'Verification image'
 cli_option --package-root PKG 'Package root'
 cli_option --sdk-profile SDK_PROFILE 'release (default) or local-v1.0.8 (read-only tests only)'
+cli_flag --loopback LOOPBACK 'Also run real SDK loopback smoke test (network isolated)'
+cli_flag --unified UNIFIED 'Verify unified posture/move/Twist API'
 cli_flag --posture POSTURE 'Verify posture API'
 cli_flag --yaw-circle YAW_CIRCLE 'Verify yaw-circle API'
 cli_parse "$@"
 set -- "${CLI_ARGS[@]}"
 (($# == 1)) || cli_die 'exactly one wheel path is required'
-((POSTURE + YAW_CIRCLE <= 1)) || cli_die 'verification modes are mutually exclusive'
+((POSTURE + YAW_CIRCLE + UNIFIED <= 1)) || cli_die 'verification modes are mutually exclusive'
 case "$SDK_PROFILE" in
   release) CHECKSUMS="$PKG/sdk/SHA256SUMS" ;;
   local-v1.0.8)
-    ((POSTURE == 0 && YAW_CIRCLE == 0)) || cli_die 'local-v1.0.8 is restricted to read-only testing'
+    ((POSTURE == 0 && YAW_CIRCLE == 0 && UNIFIED == 0 && LOOPBACK == 0)) || cli_die 'local-v1.0.8 is restricted to read-only testing'
     CHECKSUMS="$PKG/sdk/SHA256SUMS.local-v1.0.8"
     echo 'WARNING: local-v1.0.8 read-only test artifact; not the release baseline.' >&2
     ;;
@@ -30,12 +34,13 @@ WHEEL="${1:-}"
 VERIFY_MODE=""
 ((POSTURE == 0)) || VERIFY_MODE=--posture
 ((YAW_CIRCLE == 0)) || VERIFY_MODE=--yaw-circle
+((UNIFIED == 0)) || VERIFY_MODE=--unified
 
 [[ -n "$WHEEL" && -f "$WHEEL" ]] || {
   echo "usage: $0 /path/to/bpx_sdk_open-1.0.8-cp310-...x86_64.whl [--posture|--yaw-circle]" >&2
   exit 2
 }
-[[ -z "$VERIFY_MODE" || "$VERIFY_MODE" == "--posture" || "$VERIFY_MODE" == "--yaw-circle" ]] || {
+[[ -z "$VERIFY_MODE" || "$VERIFY_MODE" == "--posture" || "$VERIFY_MODE" == "--yaw-circle" || "$VERIFY_MODE" == "--unified" ]] || {
   echo "optional second argument must be --posture or --yaw-circle" >&2
   exit 2
 }
@@ -52,9 +57,11 @@ actual="$(sha256sum "$WHEEL" | awk '{print $1}')"
 }
 
 docker run --rm --network none \
+  -v "$(realpath "$PKG"):/pkg:ro" -w /pkg -e PYTHONPATH=/pkg \
   -e BPX_SDK_WHEEL_NAME="$wheel_name" \
+  -e BPX_SDK_LOOPBACK="$LOOPBACK" \
   -e BPX_SDK_VERIFY_MODE="$VERIFY_MODE" \
   -v "$(realpath "$WHEEL"):/sdk/$wheel_name:ro" \
   --entrypoint /bin/bash \
   "$IMAGE" \
-  -lc 'python3 -m pip install --no-index --no-deps --force-reinstall "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && python3 -m bpx_quadruped.verify_sdk_api $BPX_SDK_VERIFY_MODE'
+  -lc 'python3 -m pip install --no-index --no-deps --force-reinstall "/sdk/$BPX_SDK_WHEEL_NAME" >/dev/null && python3 -m bpx_quadruped.verify_sdk_api $BPX_SDK_VERIFY_MODE && if [[ "$BPX_SDK_LOOPBACK" == 1 ]]; then timeout 45 python3 scripts/check-sdk-loopback.py; fi'

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from .sdk_compat import validate_sdk_version
 from types import ModuleType
 from typing import Any, Dict, Iterable, Optional
 
@@ -24,6 +25,11 @@ REQUIRED_READ_METHODS = (
     "getJointPosition",
     "getJointVelocity",
     "getJointTorque",
+    "getMotorTemperature", "getDriverTemperature",
+    "getCurrentMotionState", "getCurrentGait", "getSubGait",
+    "getBatteryLevel", "getBatteryCurrent",
+    "getJointStateTimestamp", "getImuTimestamp",
+    "getMotionStateTimestamp", "getBatteryTimestamp",
 )
 
 MOTION_METHODS = (
@@ -43,9 +49,7 @@ REQUIRED_POSTURE_METHODS = (
 
 
 def validate_sdk_module(sdk: ModuleType) -> Dict[str, Any]:
-    version = getattr(sdk, "__version__", None)
-    if version != "1.0.8":
-        raise RuntimeError("expected BPX SDK 1.0.8, got {!r}".format(version))
+    version = validate_sdk_version(sdk)
     request_type = getattr(sdk, "RequestRobotState", None)
     if request_type is None:
         raise RuntimeError("BPX SDK has no RequestRobotState")
@@ -69,9 +73,7 @@ def validate_sdk_module(sdk: ModuleType) -> Dict[str, Any]:
 def validate_posture_sdk_module(sdk: ModuleType) -> Dict[str, Any]:
     """Check the narrow MotionLevelControl API used by the posture probe."""
 
-    version = getattr(sdk, "__version__", None)
-    if version != "1.0.8":
-        raise RuntimeError("expected BPX SDK 1.0.8, got {!r}".format(version))
+    version = validate_sdk_version(sdk)
     control_type = getattr(sdk, "MotionLevelControl", None)
     if control_type is None:
         raise RuntimeError("BPX SDK has no MotionLevelControl")
@@ -146,12 +148,18 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         action="store_true",
         help="also verify setVelocity for the isolated manual yaw-circle probe",
     )
+    parser.add_argument("--unified", action="store_true", help="verify unified posture/move/Twist API")
     args = parser.parse_args(argv)
 
     import bpx_sdk
 
     result = validate_sdk_module(bpx_sdk)
-    if args.yaw_circle:
+    if args.unified:
+        result.update(validate_yaw_circle_sdk_module(bpx_sdk))
+        if not hasattr(bpx_sdk.MotionLevelControl, "setWalk"):
+            raise RuntimeError("MotionLevelControl is missing: setWalk")
+        result.update(supports_twist=True, yaw_circle_probe_only=False, unified=True)
+    elif args.yaw_circle:
         result.update(validate_yaw_circle_sdk_module(bpx_sdk))
     elif args.posture:
         result.update(validate_posture_sdk_module(bpx_sdk))

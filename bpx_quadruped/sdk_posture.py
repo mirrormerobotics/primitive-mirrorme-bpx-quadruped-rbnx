@@ -168,8 +168,8 @@ class SdkPostureSession:
         if self._control_factory is not None:
             return self._control_factory()
         sdk = importlib.import_module("bpx_sdk")
-        if getattr(sdk, "__version__", None) != "1.0.8":
-            raise RuntimeError("BPX SDK version 1.0.8 is required")
+        from .sdk_compat import validate_sdk_version
+        validate_sdk_version(sdk)
         control_type = getattr(sdk, "MotionLevelControl", None)
         if control_type is None:
             raise RuntimeError("BPX SDK has no MotionLevelControl")
